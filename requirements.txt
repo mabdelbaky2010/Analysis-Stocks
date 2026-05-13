@@ -1,0 +1,6 @@
+flask
+requests
+yfinance
+pandas
+pandas_ta
+schedule
