@@ -1,0 +1,195 @@
+import requests
+import pandas as pd
+import pandas_ta as ta
+import yfinance as yf
+from datetime import datetime
+import time
+import schedule
+
+# ── إعدادات ──────────────────────────────────────────
+TELEGRAM_TOKEN = "8784816733:AAF2FpH9EqJ85BzVUjSXH1UI4McDIhSbNvI"
+CHAT_ID        = "1621604072"
+
+# أسهم NASDAQ 100
+NASDAQ100 = [
+    "AAPL","MSFT","NVDA","AMZN","META","GOOGL","GOOG","TSLA","AVGO","COST",
+    "NFLX","AMD","ADBE","QCOM","PEP","TMUS","AMAT","TXN","INTU","CSCO",
+    "AMGN","CMCSA","HON","INTC","VRTX","BKNG","SBUX","GILD","ADI","MDLZ",
+    "LRCX","REGN","PDD","KLAC","SNPS","MRVL","CDNS","ADP","PANW","FTNT",
+    "ABNB","CRWD","MELI","ORLY","ASML","CTAS","CSX","MNST","PCAR","NXPI",
+    "PYPL","WDAY","KDP","DXCM","CHTR","ROST","ODFL","FANG","FAST","PAYX",
+    "CPRT","VRSK","TEAM","DDOG","ZS","ANSS","SGEN","IDXX","BIIB","ILMN",
+    "ALGN","MTCH","LCID","ZM","OKTA","DLTR","SIRI","WBA","EBAY","JD",
+    "CTSH","SPLK","ENPH","CEG","ON","GFS","RIVN","GEHC","DASH","TTD",
+    "RBLX","GRAB","MCHP","MRNA","LULU","MDB","TTWO","NTES","BMRN","SMCI"
+]
+
+# ── إرسال تيليجرام ───────────────────────────────────
+def send_telegram(message):
+    url = f"https://api.telegram.org/bot8784816733:AAF2FpH9EqJ85BzVUjSXH1UI4McDIhSbNvI/sendMessage"
+    payload = {
+        "chat_id": CHAT_ID,
+        "text": message,
+        "parse_mode": "HTML"
+    }
+    try:
+        requests.post(url, data=payload, timeout=10)
+    except Exception as e:
+        print(f"خطأ إرسال تيليجرام: {e}")
+
+# ── تحليل سهم واحد ───────────────────────────────────
+def analyze_stock(symbol):
+    try:
+        df = yf.download(symbol, period="3mo", interval="1h", progress=False)
+        if df.empty or len(df) < 50:
+            return None
+
+        # حساب المؤشرات
+        df["EMA20"]  = ta.ema(df["Close"], length=20)
+        df["EMA50"]  = ta.ema(df["Close"], length=50)
+        df["EMA200"] = ta.ema(df["Close"], length=200)
+        df["RSI"]    = ta.rsi(df["Close"], length=14)
+
+        macd = ta.macd(df["Close"], fast=12, slow=26, signal=9)
+        df["MACD"]        = macd["MACD_12_26_9"]
+        df["MACD_SIGNAL"] = macd["MACDs_12_26_9"]
+
+        # آخر صف
+        last = df.iloc[-1]
+        price    = round(float(last["Close"]), 2)
+        rsi      = round(float(last["RSI"]), 1)
+        ema20    = round(float(last["EMA20"]), 2)
+        ema50    = round(float(last["EMA50"]), 2)
+        ema200   = round(float(last["EMA200"]), 2)
+        macd_val = round(float(last["MACD"]), 4)
+        macd_sig = round(float(last["MACD_SIGNAL"]), 4)
+
+        # ── شروط الإشارة ─────────────────────────────
+        signals = []
+
+        # RSI
+        if rsi < 35:
+            signals.append("🔵 RSI تشبع بيع")
+        elif rsi > 65:
+            signals.append("🔴 RSI تشبع شراء")
+        else:
+            signals.append(f"⚪ RSI محايد ({rsi})")
+
+        # EMA
+        if price > ema20 > ema50 > ema200:
+            signals.append("🟢 السعر فوق EMA20/50/200 — اتجاه صاعد قوي")
+        elif price < ema20 < ema50 < ema200:
+            signals.append("🔴 السعر تحت EMA20/50/200 — اتجاه هابط")
+        elif price > ema50:
+            signals.append("🟡 السعر فوق EMA50")
+
+        # MACD
+        if macd_val > macd_sig:
+            signals.append("🟢 MACD إشارة شراء")
+        else:
+            signals.append("🔴 MACD إشارة بيع")
+
+        # ── تحديد قوة الإشارة ────────────────────────
+        buy_signals  = sum(1 for s in signals if "🟢" in s)
+        sell_signals = sum(1 for s in signals if "🔴" in s)
+
+        if buy_signals >= 2 and rsi < 65:
+            strength = "🚀 إشارة شراء قوية"
+        elif sell_signals >= 2 and rsi > 35:
+            strength = "⚠️ إشارة بيع قوية"
+        else:
+            strength = "➡️ محايد"
+
+        return {
+            "symbol":   symbol,
+            "price":    price,
+            "rsi":      rsi,
+            "ema20":    ema20,
+            "ema50":    ema50,
+            "ema200":   ema200,
+            "macd":     macd_val,
+            "signals":  signals,
+            "strength": strength,
+            "buy":      buy_signals,
+            "sell":     sell_signals
+        }
+
+    except Exception as e:
+        print(f"خطأ {symbol}: {e}")
+        return None
+
+# ── تشغيل الـ Screener ───────────────────────────────
+def run_screener():
+    now = datetime.now().strftime("%Y-%m-%d %H:%M")
+    print(f"\n{'='*40}")
+    print(f"تشغيل الـ Screener — {now}")
+    print(f"{'='*40}")
+
+    buy_list  = []
+    sell_list = []
+
+    for symbol in NASDAQ100:
+        print(f"تحليل {symbol}...")
+        result = analyze_stock(symbol)
+        if result:
+            if result["buy"] >= 2:
+                buy_list.append(result)
+            elif result["sell"] >= 2:
+                sell_list.append(result)
+        time.sleep(0.5)  # تجنب الحظر
+
+    # ── إرسال نتائج الشراء ───────────────────────────
+    if buy_list:
+        msg = f"🚀 <b>فرص شراء — NASDAQ 100</b>\n"
+        msg += f"🕐 {now}\n"
+        msg += f"━━━━━━━━━━━━━━━━━━\n\n"
+
+        for r in buy_list[:10]:  # أعلى 10 فقط
+            msg += (
+                f"📌 <b>{r['symbol']}</b> — ${r['price']}\n"
+                f"   RSI: {r['rsi']} | "
+                f"EMA50: ${r['ema50']}\n"
+                f"   {' | '.join(r['signals'])}\n"
+                f"   {r['strength']}\n\n"
+            )
+        send_telegram(msg)
+
+    # ── إرسال نتائج البيع ────────────────────────────
+    if sell_list:
+        msg = f"⚠️ <b>إشارات بيع — NASDAQ 100</b>\n"
+        msg += f"🕐 {now}\n"
+        msg += f"━━━━━━━━━━━━━━━━━━\n\n"
+
+        for r in sell_list[:10]:
+            msg += (
+                f"📌 <b>{r['symbol']}</b> — ${r['price']}\n"
+                f"   RSI: {r['rsi']} | "
+                f"EMA50: ${r['ema50']}\n"
+                f"   {' | '.join(r['signals'])}\n"
+                f"   {r['strength']}\n\n"
+            )
+        send_telegram(msg)
+
+    # ── لو ما في إشارات ──────────────────────────────
+    if not buy_list and not sell_list:
+        send_telegram(
+            f"📊 <b>Screener NASDAQ 100</b>\n"
+            f"🕐 {now}\n"
+            f"━━━━━━━━━━━━━━━━━━\n"
+            f"✅ لا توجد إشارات واضحة الآن\n"
+            f"السوق في حالة محايدة"
+        )
+
+    print("✅ اكتمل الـ Screener")
+
+# ── الجدول الزمني ────────────────────────────────────
+if __name__ == "__main__":
+    send_telegram("✅ بوت الـ Screener بدأ يعمل!\nسيرسل تقرير كل 1 يوم")
+    
+    run_screener()  # تشغيل فوري عند البدء
+    
+    schedule.every(1).day.do(run_screener)
+    
+    while True:
+        schedule.run_pending()
+        time.sleep(1)
