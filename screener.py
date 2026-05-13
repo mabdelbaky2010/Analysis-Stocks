@@ -234,7 +234,7 @@ if __name__ == "__main__":
 
     run()
 
-    schedule.every().day.at("16:00").do(run)
+    schedule.every(10).mintues.do(run)
 
     while True:
         schedule.run_pending()
