@@ -322,14 +322,14 @@ if __name__ == "__main__":
         "📊 تداول 30 | فريم يومي\n"
         "📈 EMA10 / EMA20 / EMA50 / EMA200\n"
         "📉 RSI + MACD\n"
-        "⏰ كل 20 دقيقة\n"
+        "⏰ كل 10 دقيقة\n"
         "━━━━━━━━━━━━━━━━━━\n"
         "جاري التحليل..."
     )
 
     run_screener()
 
-    schedule.every(25).minutes.do(run_screener)
+    schedule.every(10).minutes.do(run_screener)
 
     while True:
         schedule.run_pending()
