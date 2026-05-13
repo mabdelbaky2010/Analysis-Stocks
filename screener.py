@@ -265,7 +265,7 @@ if __name__ == "__main__":
     threading.Thread(target=run_saudi).start()
 
     # NASDAQ كل 15 دقيقة
-    schedule.every(15).minutes.at(16:00).do(
+    schedule.every(15).minutes.at("16:00").do(
         lambda: threading.Thread(target=run_nasdaq).start()
     )
 
