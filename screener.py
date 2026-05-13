@@ -270,7 +270,7 @@ if __name__ == "__main__":
     )
 
     # تداول مرة يومياً الساعة 10 صباحاً (بداية السوق السعودي)
-    schedule.every().day.at("10:00").do(
+    schedule.every(10).minutes.do(
         lambda: threading.Thread(target=run_saudi).start()
     )
 
